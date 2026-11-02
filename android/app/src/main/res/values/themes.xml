@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.HubertECG" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#0D3B66</item>
+        <item name="colorSecondary">#1A6FA8</item>
+    </style>
+</resources>
