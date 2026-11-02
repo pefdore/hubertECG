@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d3b66" />
+  <title>hubertECG — Analyse d'ECG 100 % locale</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="logo">🫀 hubert<span>ECG</span></div>
+    <p class="tagline">Analyse d'ECG <strong>100 % locale sur votre téléphone</strong> — aucune donnée ne quitte l'appareil.</p>
+    <p class="webgpu-status" id="gpu-status">Vérification du support WebGPU…</p>
+  </header>
+
+  <main>
+    <section class="card" id="model-card">
+      <h2>🧠 Modèle IA embarqué</h2>
+      <label>Modèle (téléchargé une seule fois, puis utilisable hors-ligne)
+        <select id="model-select"></select>
+      </label>
+      <button id="load-model" class="cta small">Charger le modèle</button>
+      <div class="progress hidden" id="progress-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+        <p class="progress-text" id="progress-text"></p>
+      </div>
+      <p class="status" id="model-status">Modèle non chargé.</p>
+      <p class="status" id="ecg-model-status">HuBERT-ECG (ONNX) : chargement au premier usage…</p>
+    </section>
+
+    <section class="card">
+      <h2>1. Informations patient</h2>
+      <div class="grid">
+        <label>Âge <input id="age" type="number" inputmode="numeric" placeholder="ex: 67" /></label>
+        <label>Sexe
+          <select id="sexe">
+            <option value="">—</option>
+            <option value="Homme">Homme</option>
+            <option value="Femme">Femme</option>
+          </select>
+        </label>
+        <label class="full">Antécédents <input id="antecedents" type="text" placeholder="HTA, diabète, infarctus…" /></label>
+        <label class="full">Symptômes <input id="symptomes" type="text" placeholder="douleur thoracique, palpitations, dyspnée…" /></label>
+        <label class="full">Traitements <input id="medicaments" type="text" placeholder="ex: bisoprolol, apixaban…" /></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. ECG</h2>
+      <div class="upload-zone" id="dropzone">
+        <p>📷 Photo du tracé (appareil photo) ou image/PDF de l'ECG</p>
+        <p class="local-note">🔒 Le fichier reste sur l'appareil, il n'est jamais envoyé.</p>
+        <input id="file" type="file" accept="image/*,.pdf" capture="environment" hidden />
+        <img id="preview" class="preview hidden" alt="Aperçu de l'ECG" />
+        <p class="file-name" id="filename"></p>
+      </div>
+
+      <h3>Signal brut 12 dérivations (CSV : 12 colonnes, ex: I, II, III, aVR…V6)</h3>
+      <div class="grid">
+        <label>Fréquence d'échantillonnage (Hz)
+          <input id="fs" type="number" inputmode="numeric" value="500" />
+        </label>
+        <label>Fichier CSV <input id="csvfile" type="file" accept=".csv,.txt" /></label>
+      </div>
+      <p class="hint" id="csv-result"></p>
+      <button id="run-ecg-model" class="cta small" disabled>🧬 Analyser le signal avec HuBERT-ECG (164 pathologies)</button>
+      <div id="ecg-model-result" class="hidden"></div>
+
+      <h3>Mesures (optionnel)</h3>
+      <div class="grid">
+        <label>Rythme <input id="rythme" type="text" placeholder="sinusal, régulier…" /></label>
+        <label>Fréquence (bpm) <input id="fc" type="number" inputmode="numeric" placeholder="ex: 75" /></label>
+        <label>PR (ms) <input id="pr" type="number" inputmode="numeric" placeholder="ex: 160" /></label>
+        <label>QRS (ms) <input id="qrs" type="number" inputmode="numeric" placeholder="ex: 90" /></label>
+        <label>QT/QTc (ms) <input id="qt" type="text" placeholder="ex: 420/410" /></label>
+        <label>Segment ST <input id="st" type="text" placeholder="normal, sus-décalé…" /></label>
+        <label>Ondes T <input id="ondet" type="text" placeholder="normales, inversées…" /></label>
+        <label>Axe QRS <input id="axe" type="text" placeholder="ex: 30°" /></label>
+        <label class="full">Observations <textarea id="obs" rows="2" placeholder="autres remarques sur le tracé…"></textarea></label>
+      </div>
+    </section>
+
+    <button id="analyze" class="cta" disabled>⚡ Lancer l'analyse locale</button>
+
+    <section id="result" class="card hidden">
+      <h2>3. Rapport d'analyse (LLM local)</h2>
+      <div id="report"></div>
+    </section>
+
+    <p class="disclaimer">
+      ⚠️ Aide à l'interprétation générée localement par IA. Ne remplace ni le jugement clinique
+      du médecin, ni l'avis d'un cardiologue. En cas de doute ou de signes de gravité : urgences.
+    </p>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
