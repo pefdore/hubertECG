@@ -15,6 +15,7 @@ import sys
 import onnx
 import torch
 from huggingface_hub import snapshot_download
+from onnxconverter_common import float16
 
 from hubert_ecg.modeling_classification import HuBERTECGForClassification
 
@@ -43,14 +44,16 @@ def main() -> None:
         opset_version=17,
         do_constant_folding=True,
     )
-    # Fusionne les poids externes (.data) en un seul fichier autonome (requis sur Android)
+    # Fusionne les poids externes (.data) en un seul fichier autonome, puis convertit
+    # en fp16 (~58 Mo, sous la limite GitHub de 100 Mo, perte négligeable) — requis sur Android
     m = onnx.load(raw, load_external_data=True)
-    onnx.save_model(m, OUT, save_as_external_data=False)
+    m = float16.convert_float_to_float16(m, keep_io_types=True)
+    onnx.save_model(m, OUT)
     os.remove(raw)
     for extra in (raw + ".data", OUT + ".data"):
         if os.path.exists(extra):
             os.remove(extra)
-    print(f"OK -> {os.path.abspath(OUT)} ({os.path.getsize(OUT) // 1024 // 1024} Mo, autonome)")
+    print(f"OK -> {os.path.abspath(OUT)} ({os.path.getsize(OUT) // 1024 // 1024} Mo, fp16 autonome)")
 
 
 if __name__ == "__main__":
