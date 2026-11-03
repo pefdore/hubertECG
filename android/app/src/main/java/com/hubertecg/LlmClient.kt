@@ -65,9 +65,10 @@ class LlmClient(private val context: Context) {
                 .ifBlank { "- non renseigné" }
         }
         return """
-            Tu es un médecin généraliste expérimenté spécialisé dans l'interprétation des ECG.
-            Rédige un rapport structuré, clair et pédagogique en français. Cette analyse est une
-            aide à la décision qui ne remplace pas l'avis d'un cardiologue.
+            Tu es un médecin généraliste expérimenté en interprétation d'ECG.
+            Tu réponds UNIQUEMENT par un JSON compact sur une seule ligne, sans texte avant/après,
+            sans markdown, et tu ne répètes jamais un champ.
+            Cette analyse est une aide à la décision, jamais un substitut à l'avis d'un cardiologue.
 
             INFORMATIONS PATIENT :
             ${fmt(patient)}
@@ -75,34 +76,50 @@ class LlmClient(private val context: Context) {
             DONNÉES / MESURES DE L'ECG :
             ${fmt(ecg)}
 
-            Réponds UNIQUEMENT avec un JSON valide :
-            {
-              "rythme": "description du rythme",
-              "frequence_cardiaque": "FC estimée en bpm",
-              "intervalles": "analyse PR, QRS, QT/QTc",
-              "morphologie": "ondes P, QRS, T, segment ST",
-              "diagnostic_rapporte": "diagnostic le plus probable ou 'ECG normal'",
-              "diagnostics_differentiels": ["..."],
-              "explication": "explication pédagogique",
-              "conduite_a_tenir": "conduite à tenir en médecine générale",
-              "niveau_urgence": "urgence vitale / avis spécialisé rapide / surveillance standard",
-              "precautions": "limites de l'analyse IA"
-            }
+            Réponds UNIQUEMENT par ce JSON compact (une seule ligne, valeurs courtes) :
+            {"rythme":"...","frequence_cardiaque":"...","diagnostic_rapporte":"...","diagnostics_differentiels":["..."],"explication":"...","conduite_a_tenir":"...","niveau_urgence":"urgence vitale / avis spécialisé rapide / surveillance standard","precautions":"..."}
         """.trimIndent()
     }
 
     fun parseReport(text: String): Map<String, Any?> {
-        val start = text.indexOf('{')
-        val end = text.lastIndexOf('}')
-        if (start < 0 || end <= start) return mapOf("réponse_brute" to text)
+        val t = text.replace("```json", "").replace("```", "").trim()
+        val start = t.indexOf('{')
+        if (start < 0) return mapOf("réponse_brute" to text)
+        var depth = 0; var end = -1; var inStr = false; var esc = false
+        for (i in start until t.length) {
+            val c = t[i]
+            if (inStr) {
+                if (esc) esc = false
+                else if (c == '\\') esc = true
+                else if (c == '"') inStr = false
+            } else if (c == '"') inStr = true
+            else if (c == '{') depth++
+            else if (c == '}') { depth--; if (depth == 0) { end = i; break } }
+        }
+        val candidate = if (end > start) t.substring(start, end + 1) else t.substring(start)
         return try {
-            val obj = JSONObject(text.substring(start, end + 1))
+            val obj = JSONObject(candidate)
             obj.keys().asSequence().associateWith { k ->
                 val v = obj.get(k)
                 if (v is org.json.JSONArray) List(v.length()) { i -> v.getString(i) } else v.toString()
             }
         } catch (e: Exception) {
-            mapOf("erreur" to "JSON invalide", "réponse_brute" to text.substring(start, end + 1))
+            try {
+                var fixed = candidate
+                if (end <= start) {
+                    if (inStr) fixed += '"'
+                    val open = fixed.count { it == '[' } - fixed.count { it == ']' }
+                    if (open > 0) fixed += "]".repeat(open)
+                    if (depth > 0) fixed += "}".repeat(depth)
+                }
+                val obj = JSONObject(fixed)
+                obj.keys().asSequence().associateWith { k ->
+                    val v = obj.get(k)
+                    if (v is org.json.JSONArray) List(v.length()) { i -> v.getString(i) } else v.toString()
+                }
+            } catch (e2: Exception) {
+                mapOf("erreur" to "JSON invalide", "réponse_brute" to candidate)
+            }
         }
     }
 }

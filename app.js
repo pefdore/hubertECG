@@ -10,11 +10,10 @@ const MODELS = [
   { id: "Llama-3.2-1B-Instruct-q4f16_1-MLC", label: "Llama 3.2 1B (~600 Mo, plus lent)" },
 ];
 
-const SYSTEM_PROMPT = `Tu es un médecin généraliste expérimenté spécialisé dans l'interprétation des
-électrocardiogrammes (ECG). Tu analyses les données fournies localement et tu produis un rapport
-structuré, clair et pédagogique, en français, avec un ton professionnel mais accessible.
-Tu rappelles toujours que ton analyse est une aide à la décision qui ne remplace pas l'avis d'un
-cardiologue ni le jugement clinique.`;
+const SYSTEM_PROMPT = `Tu es un médecin généraliste expérimenté en interprétation d'ECG.
+Tu réponds UNIQUEMENT par un JSON compact sur une seule ligne, sans texte avant/après,
+sans markdown, sans retour à la ligne, et tu ne répètes jamais un champ.
+Cette analyse est une aide à la décision, jamais un substitut à l'avis d'un cardiologue.`;
 
 let engine = null;
 
@@ -208,31 +207,41 @@ ${fmt(patient)}
 DONNÉES / MESURES DE L'ECG :
 ${fmt(ecg)}
 
-Produis un rapport structuré en JSON valide avec exactement ces champs :
-{
-  "rythme": "description du rythme (sinusal ou non, régulier ou non)",
-  "frequence_cardiaque": "fréquence cardiaque estimée en bpm",
-  "intervalles": "analyse des intervalles PR, QRS, QT/QTc si disponibles",
-  "morphologie": "analyse morphologique des ondes P, QRS, T et segment ST",
-  "diagnostic_rapporte": "diagnostic rapporté le plus probable, ou 'ECG normal'",
-  "diagnostics_differentiels": ["liste des diagnostics différentiels à envisager"],
-  "explication": "explication pédagogique en langage clair pour le médecin généraliste",
-  "conduite_a_tenir": "conduite à tenir recommandée en médecine générale",
-  "niveau_urgence": "urgence vitale / avis spécialisé rapide / surveillance standard",
-  "precautions": "limites de l'analyse par IA locale et précautions d'interprétation"
-}
-
-Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.`;
+Réponds UNIQUEMENT par ce JSON compact (une seule ligne, champs dans cet ordre, valeurs courtes) :
+{"rythme":"...","frequence_cardiaque":"...","diagnostic_rapporte":"...","diagnostics_differentiels":["..."],"explication":"...","conduite_a_tenir":"...","niveau_urgence":"urgence vitale / avis spécialisé rapide / surveillance standard","precautions":"..."}
+Ne rajoute aucun autre champ, ne répète aucun champ, ne mets pas de texte autour.`;
 }
 
 function parseJson(text) {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1) return { erreur: "Réponse non parsable", reponse_brute: text };
+  let t = text.replace(/```json|```/gi, "").trim();
+  const start = t.indexOf("{");
+  if (start === -1) return { erreur: "Réponse non parsable", reponse_brute: text };
+  let depth = 0, end = -1, inStr = false, esc = false;
+  for (let i = start; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}") { depth--; if (depth === 0) { end = i; break; } }
+  }
+  let candidate = end !== -1 ? t.slice(start, end + 1) : t.slice(start);
   try {
-    return JSON.parse(text.slice(start, end + 1));
+    return JSON.parse(candidate);
   } catch {
-    return { erreur: "JSON invalide", reponse_brute: text.slice(start, end + 1) };
+    try {
+      let fixed = candidate;
+      if (end === -1) {
+        if (inStr) fixed += '"';
+        fixed += "]".repeat(Math.max(0, (fixed.match(/\[/g) || []).length - (fixed.match(/\]/g) || []).length));
+        fixed += "}".repeat(Math.max(0, depth));
+      }
+      return JSON.parse(fixed);
+    } catch {
+      return { erreur: "JSON invalide", reponse_brute: candidate };
+    }
   }
 }
 
@@ -258,7 +267,9 @@ analyzeBtn.addEventListener("click", async () => {
     ];
     const reply = await engine.chat.completions.create({
       messages,
-      temperature: 0.3,
+      temperature: 0.2,
+      top_p: 0.8,
+      frequency_penalty: 1.0,
       max_tokens: 1024,
     });
     const text = reply.choices[0].message.content;
