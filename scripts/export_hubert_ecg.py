@@ -12,6 +12,7 @@ Produit models/hubert-ecg-small.onnx (entrée `input_values` [batch, 6000] =
 import os
 import sys
 
+import onnx
 import torch
 from huggingface_hub import snapshot_download
 
@@ -31,17 +32,25 @@ def main() -> None:
         logits = model(input_values=dummy, return_dict=True).logits
     assert logits.shape == (1, 164), logits.shape
 
+    raw = OUT + ".raw.onnx"
     torch.onnx.export(
         model,
         (dummy,),
-        OUT,
+        raw,
         input_names=["input_values"],
         output_names=["logits"],
         dynamic_axes={"input_values": {0: "batch"}, "logits": {0: "batch"}},
         opset_version=17,
         do_constant_folding=True,
     )
-    print(f"OK -> {os.path.abspath(OUT)} ({os.path.getsize(OUT) // 1024} Ko)")
+    # Fusionne les poids externes (.data) en un seul fichier autonome (requis sur Android)
+    m = onnx.load(raw, load_external_data=True)
+    onnx.save_model(m, OUT, save_as_external_data=False)
+    os.remove(raw)
+    for extra in (raw + ".data", OUT + ".data"):
+        if os.path.exists(extra):
+            os.remove(extra)
+    print(f"OK -> {os.path.abspath(OUT)} ({os.path.getsize(OUT) // 1024 // 1024} Mo, autonome)")
 
 
 if __name__ == "__main__":
