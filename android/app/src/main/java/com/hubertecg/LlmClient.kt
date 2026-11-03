@@ -2,6 +2,7 @@ package com.hubertecg
 
 import android.content.Context
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -48,7 +49,12 @@ class LlmClient(private val context: Context) {
     }
 
     suspend fun generate(prompt: String): String = suspendCancellableCoroutine { cont ->
-        val session = llm!!.createSession()
+        val sessionOptions = LlmInferenceSession.LlmInferenceSessionOptions.builder()
+            .setTemperature(0.2f)
+            .setTopK(20)
+            .setTopP(0.8f)
+            .build()
+        val session = llm!!.createSession(sessionOptions)
         session.addQueryChunk(prompt)
         session.generateResponseAsync { partial, _ ->
             if (partial != null && cont.isActive) cont.resume(partial)
@@ -76,8 +82,9 @@ class LlmClient(private val context: Context) {
             DONNÉES / MESURES DE L'ECG :
             ${fmt(ecg)}
 
-            Réponds UNIQUEMENT par ce JSON compact (une seule ligne, valeurs courtes) :
-            {"rythme":"...","frequence_cardiaque":"...","diagnostic_rapporte":"...","diagnostics_differentiels":["..."],"explication":"...","conduite_a_tenir":"...","niveau_urgence":"urgence vitale / avis spécialisé rapide / surveillance standard","precautions":"..."}
+            Modèle de réponse EXACT à suivre (une seule ligne, valeurs courtes en français) :
+            {"rythme":"...","frequence_cardiaque":"...","diagnostic_rapporte":"...","explication":"...","conduite_a_tenir":"...","niveau_urgence":"...","precautions":"..."}
+            Ta réponse commence par { et se termine par }. Aucun autre texte.
         """.trimIndent()
     }
 
@@ -118,6 +125,16 @@ class LlmClient(private val context: Context) {
                     if (v is org.json.JSONArray) List(v.length()) { i -> v.getString(i) } else v.toString()
                 }
             } catch (e2: Exception) {
+                val kv = linkedMapOf<String, Any?>()
+                val regex = Regex("""^[-•*]?\s*([A-Za-zÀ-ÿ_ ]{2,40}?)\s*[:：]\s*(.+)$""")
+                for (line in candidate.lineSequence()) {
+                    val m = regex.find(line.trim()) ?: continue
+                    kv[m.groupValues[1].trim().lowercase().replace(Regex("\\s+"), "_")] = m.groupValues[2].trim()
+                }
+                if (kv.size >= 2) {
+                    kv["note"] = "réponse non-JSON, champs extraits ligne par ligne"
+                    return kv
+                }
                 mapOf("erreur" to "JSON invalide", "réponse_brute" to candidate)
             }
         }

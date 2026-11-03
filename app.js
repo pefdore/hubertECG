@@ -11,8 +11,8 @@ const MODELS = [
 ];
 
 const SYSTEM_PROMPT = `Tu es un médecin généraliste expérimenté en interprétation d'ECG.
-Tu réponds UNIQUEMENT par un JSON compact sur une seule ligne, sans texte avant/après,
-sans markdown, sans retour à la ligne, et tu ne répètes jamais un champ.
+RÈGLE ABSOLUE : ta réponse commence par le caractère { et se termine par }, c'est un JSON
+compact, sans aucun texte avant ou après, sans markdown, et tu ne répètes jamais un champ.
 Cette analyse est une aide à la décision, jamais un substitut à l'avis d'un cardiologue.`;
 
 let engine = null;
@@ -207,9 +207,9 @@ ${fmt(patient)}
 DONNÉES / MESURES DE L'ECG :
 ${fmt(ecg)}
 
-Réponds UNIQUEMENT par ce JSON compact (une seule ligne, champs dans cet ordre, valeurs courtes) :
-{"rythme":"...","frequence_cardiaque":"...","diagnostic_rapporte":"...","diagnostics_differentiels":["..."],"explication":"...","conduite_a_tenir":"...","niveau_urgence":"urgence vitale / avis spécialisé rapide / surveillance standard","precautions":"..."}
-Ne rajoute aucun autre champ, ne répète aucun champ, ne mets pas de texte autour.`;
+Modèle de réponse EXACT à suivre (une seule ligne, valeurs courtes en français) :
+{"rythme":"...","frequence_cardiaque":"...","diagnostic_rapporte":"...","explication":"...","conduite_a_tenir":"...","niveau_urgence":"...","precautions":"..."}
+Ta réponse commence par { et se termine par }. Aucun autre texte.`;
 }
 
 function parseJson(text) {
@@ -240,6 +240,12 @@ function parseJson(text) {
       }
       return JSON.parse(fixed);
     } catch {
+      const kv = {};
+      for (const l of candidate.split(/\r?\n/)) {
+        const m = l.trim().match(/^[-•*]?\s*([A-Za-zÀ-ÿ_ ]{2,40}?)\s*[:：]\s*(.+)$/);
+        if (m) kv[m[1].trim().toLowerCase().replace(/\s+/g, "_")] = m[2].trim();
+      }
+      if (Object.keys(kv).length >= 2) return { ...kv, note: "réponse non-JSON, champs extraits ligne par ligne" };
       return { erreur: "JSON invalide", reponse_brute: candidate };
     }
   }
@@ -267,10 +273,10 @@ analyzeBtn.addEventListener("click", async () => {
     ];
     const reply = await engine.chat.completions.create({
       messages,
-      temperature: 0.2,
-      top_p: 0.8,
-      frequency_penalty: 1.0,
-      max_tokens: 1024,
+      temperature: 0.1,
+      top_p: 0.9,
+      frequency_penalty: 1.5,
+      max_tokens: 768,
     });
     const text = reply.choices[0].message.content;
     const data = parseJson(text);
